@@ -1,6 +1,8 @@
-torch>=1.10.0
-transformers>=4.16.0
-datasets>=1.18.0
-streamlit>=1.10.0
-soundfile>=0.10.3
-pydub>=0.25.1
+transformers==4.51.3
+torch==2.6.0
+soundfile==0.13.1
+pydub==0.25.1
+librosa==0.10.2
+streamlit==1.44.1
+numpy==2.2.5
+ffmpeg-python==0.2.0
