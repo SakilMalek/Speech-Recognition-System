@@ -7,6 +7,7 @@ from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
 from pydub import AudioSegment
 import tempfile
 import os
+import librosa  # Added for better audio handling
 
 # Set page config
 st.set_page_config(
@@ -22,31 +23,26 @@ def load_model():
     model = Wav2Vec2ForCTC.from_pretrained("facebook/wav2vec2-base-960h")
     return processor, model
 
-# Process audio file function
+# Enhanced audio processing function
 def process_audio(audio_file, processor, model):
     # Save uploaded file temporarily
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(audio_file.name)[1]) as tmp_file:
         tmp_file.write(audio_file.getvalue())
         tmp_filename = tmp_file.name
 
     try:
-        # Handle various audio formats by converting to wav if needed
-        if audio_file.name.endswith('.mp3'):
-            audio = AudioSegment.from_mp3(tmp_filename)
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as wav_tmp:
-                wav_filename = wav_tmp.name
-            audio.export(wav_filename, format="wav")
-        else:
-            wav_filename = tmp_filename
-
-        # Load and resample audio to 16kHz
-        speech_array, sampling_rate = sf.read(wav_filename)
-        if sampling_rate != 16000:
-            speech_array = speech_array[::int(sampling_rate / 16000)]
-            sampling_rate = 16000
-
+        # Use librosa for reliable audio loading and resampling
+        speech_array, sampling_rate = librosa.load(tmp_filename, sr=16000, mono=True)
+        
+        # Check if audio is too short and pad if necessary
+        min_samples = 480  # minimum required for Wav2Vec2 model
+        if len(speech_array) < min_samples:
+            padding = np.zeros(min_samples - len(speech_array))
+            speech_array = np.concatenate([speech_array, padding])
+        
         # Process the audio
         inputs = processor(speech_array, sampling_rate=16000, return_tensors="pt", padding=True)
+        
         with torch.no_grad():
             logits = model(inputs.input_values).logits
 
@@ -56,12 +52,14 @@ def process_audio(audio_file, processor, model):
 
         return transcription
 
+    except Exception as e:
+        st.error(f"Detailed error: {str(e)}")
+        return f"Error: {str(e)}"
+        
     finally:
         # Clean up temp files
         if os.path.exists(tmp_filename):
             os.unlink(tmp_filename)
-        if 'wav_filename' in locals() and os.path.exists(wav_filename) and wav_filename != tmp_filename:
-            os.unlink(wav_filename)
 
 def main():
     # Load the model
@@ -77,7 +75,7 @@ def main():
 
     # Upload audio
     st.header("Upload Audio File")
-    uploaded_file = st.file_uploader("Choose an audio file", type=['wav', 'mp3', 'ogg', 'm4a'])
+    uploaded_file = st.file_uploader("Choose an audio file", type=['wav', 'mp3', 'ogg', 'm4a', 'flac'])
 
     if uploaded_file is not None:
         st.audio(uploaded_file, format=f'audio/{uploaded_file.name.split(".")[-1]}')
